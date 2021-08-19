@@ -8,6 +8,7 @@ export class Routes {
 
     public routes(app: Express): void {
         app.get('/ping', (req, res) => {
+            console.log('HEALTH CHECK SUCCEEDED')
             res.status(200).send();
         })
         app.post('/createSpot', Create.account);
