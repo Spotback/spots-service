@@ -7,12 +7,12 @@ import Delete from '../services/delete'
 export class Routes {
 
     public routes(app: Express): void {
+        app.get('/ping', (req, res) => {
+            res.status(200).send();
+        })
         app.post('/createSpot', Create.account);
         app.post('/updateSpot', Update.account);
         app.get('/readSpots', Read.account);
         app.delete('/deleteSpot', Delete.account);
-        app.get('/test', (req, res) => {
-            res.json({message: "hello"});
-        })
     }
 }

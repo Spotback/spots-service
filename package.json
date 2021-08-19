@@ -36,6 +36,7 @@
     "axios": "^0.21.1",
     "bcryptjs": "^2.4.3",
     "dotenv": "^8.2.0",
+    "aws4": "^1.11.0",
     "express": "^4.17.1",
     "haversine-distance": "^1.1.6",
     "json": "^9.0.6",

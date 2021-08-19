@@ -16,10 +16,11 @@ import SpotsDB, { Car, Spot, SpotsByBlock } from '../model/spots-by-block';
 class ReadSpots {
 
     public readSpots = (req: Request, res: Response, callback: Function): void => {
-        let range = parseFloat(req.query.range || 0);
+        let reqRang: string = req.query.range as string;
+        let range = parseFloat(reqRang || "0");
         //limit range to a max of 2 for now!
         if (range > 2) { range = 2; }
-        const coordinates = req.query.coordinates;
+        const coordinates: string = req.query.coordinates as string;
         const longitudeX = parseFloat(coordinates.split(",")[0]);
         const latitudeY = parseFloat(coordinates.split(",")[1]);
         const xSameYUp = LookUpUtil.xSameYUpper(longitudeX, latitudeY);

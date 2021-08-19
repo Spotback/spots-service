@@ -1,0 +1,26 @@
+{
+    "containers": {
+        "support": {
+            "image": "",
+            "environment": {
+                "APP_ENV": "release",
+                "NODE_ENV": "production"
+            },
+            "ports": {
+                "80": "HTTP"
+            }
+        }
+    },
+    "publicEndpoint": {
+        "containerName": "support",
+        "containerPort": 80,
+        "healthCheck": {
+            "healthyThreshold": 10,
+            "unhealthyThreshold": 10,
+            "timeoutSeconds": 120,
+            "intervalSeconds": 300,
+            "path": "/ping",
+            "successCodes": "200-499"
+        }
+    }
+}
