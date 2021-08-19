@@ -1,6 +1,6 @@
 {
     "containers": {
-        "support": {
+        "spots": {
             "image": "",
             "environment": {
                 "APP_ENV": "release",
@@ -12,7 +12,7 @@
         }
     },
     "publicEndpoint": {
-        "containerName": "support",
+        "containerName": "spots",
         "containerPort": 80,
         "healthCheck": {
             "healthyThreshold": 10,
