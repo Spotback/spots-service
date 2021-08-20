@@ -22,7 +22,7 @@ class DeleteSpots {
         // console.debug(blockCoordinates);
 
             console.log("Getting item:", blockItem);
-            if (!blockItem || blockItem == {} || Object.keys(blockItem).length == 0) {
+            if (!blockItem || typeof blockItem === 'object' || Object.keys(blockItem).length == 0) {
                 console.log("Spot is not in table!");
             } else {
                 blockItem = blockItem.Item;
