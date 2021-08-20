@@ -5,6 +5,9 @@ import JWT from '../utils/jwtUtil';
 import WebUtil from '../utils/webUtil'
 // import JWT from '../utils/jwtUtil';
 import SpotsDB, { Car, Spot, SpotsByBlock } from '../model/spots-by-block';
+import SupportedCitiesDB, { SupportedCity } from '../model/supported-cities';
+import SpotPostLimitsDB from '../model/user-spot-limit';
+import { JsonWebTokenError } from 'jsonwebtoken';
 
 class CreateSpot {
     // <!-- "37.4234,-123.7237" <!-- "37.23,-121.77" <!-- "37.24,-121.77" "37.22,-121.77"// "37.23,-121.76" -->// <!-- "37.23,-121.78"  -->
@@ -17,178 +20,136 @@ class CreateSpot {
     };
 
 
-    public supportedCityCheck = (data: any, callback: Function): void => {
-        let passSuppCityCheck = data.coordinates.filter((supportedCoordinates: any) => {
-            var a = { lat: data.coordinates.split(",")[0], lng: data.coordinates.split(",")[1] }
-            var b = { lat: data.supportedCoordinates.split(",")[0], lng: supportedCoordinates.split(",")[1] }
+    public supportedCityCheck = (clientCoordinates: string, supportCities: SupportedCity[]): boolean => {
+        let passSuppCityCheck = supportCities.filter((city: SupportedCity) => {
+            var a = { lat: parseFloat(clientCoordinates.split(",")[0]), lng: parseFloat(clientCoordinates.split(",")[1]) };
+            var b = { lat: parseFloat(city.coordinates.split(",")[0]), lng: parseFloat(city.coordinates.split(",")[1]) };
             let dist = haversine(a, b);
             return dist * 0.000621371 <= 20;
-        }).length;
-        if (passSuppCityCheck < 1) {
-            var result = {
-                statusCode: 200,
-                body: JSON.stringify({
-                    code: "",
-                    message: "Your city is not yet supported"
-                }),
-                headers: { 'content-type': 'application/json' }
-            };
-            callback(null, result);
-            return;
+        });
+        console.log("SPOT REQUEST FOR ", passSuppCityCheck)
+        if (passSuppCityCheck.length < 1) {
+            return false;
+        } else {
+            return true;
         }
     };
 
+    public createSpotPostLimit = async (email: string, coordinates: string) => {
+        let result = await SpotPostLimitsDB.create({
+            email,
+            coordinates
+        });
+    }
 
-    public createSpot = (blockItem: any, res: Response, callback: Function): void => {
+    public checkUserSpotPostLimit = async (email: string) => {
+        let result = await SpotPostLimitsDB.findOne({email}).exec();
+        return result;
+    }
 
-        let body = JSON.parse(blockItem.body); try {
-            body = !blockItem.body ? {} : JSON.parse(blockItem.body);
-            let path = blockItem.path;
-            let bearer = blockItem.headers.bearer;
-            let spotback_correlation_id = blockItem.headers["spotback-correlation-id"];
-            console.log(`PATH = ${path} BODY = ${body}`);
-            if (blockItem.httpMethod !== 'GET' && !body) {
-                throw new Error("INVALID REQUEST");
-            } else if (blockItem.httpMethod === 'GET' && !bearer) throw new Error("UNAUTHORIZED");
-        } catch (error) {
-            console.log(`${Constants.CLIENT_ERROR_HB}: ${error.stack}`);
-            res.statusCode = 400;
-            blockItem.body = JSON.stringify({
-                code: Constants.CLIENT_ERROR_HB,
-                message: "Invalid headers or body."
-            });
-            console.log(res);
-            callback(null, res);
+
+    public createSpot = async (req: Request, res: Response, email: string) => {
+
+        const coordinates: string = req.body.coordinates as string;
+        const longitudeX = parseFloat(coordinates.split(",")[0]);
+        const latitudeY = parseFloat(coordinates.split(",")[1]);
+        const blockCoordinate = longitudeX.toFixed(2) + "," + latitudeY.toFixed(2);
+
+        let result = await SupportedCitiesDB.find({}).exec();
+        if(!this.supportedCityCheck(coordinates, result)) {
+            WebUtil.errorResponse(res, Constants.CITY_NOT_SUPPORTED, Constants.SERVER_ERROR, 400);
             return;
         }
-        let bearer = blockItem.headers.bearer;
-        let payload = JWT.verify(bearer);
-        if (payload) {
-            this.createSpot(blockItem, res, callback);
+        let test = await this.checkUserSpotPostLimit(email);
+        console.log(test);
+        if(test) {
+            WebUtil.errorResponse(res, Constants.ONE_SPOT_PER_HOUR, Constants.CLIENT_ERROR_UA, 409);
             return;
-        } else {
-            let result = {
-                statusCode: 401,
-                body: JSON.stringify({
-                    code: Constants.CLIENT_ERROR_UA,
-                    message: "FAILED TO AUTHENTICATE."
-                })
-            }
-            callback(null, result);
         }
-        let spotId = blockItem.path.split("/")[2];
-        let coordinates = body.coordinates;
 
-        // let longitude = Math.floor(parseFloat(coordinates.split(",")[0]).toFixed(2) * 1000);
-        // let latitude = Math.floor(parseFloat(coordinates.split(",")[1]).toFixed(2) * 1000);
-        // let blockCoordinates = longitude / 1000 + "," + latitude / 1000;
-
-
-        if (!blockItem || blockItem == {} || Object.keys(blockItem).length == 0) {
-            console.log("Creating new item!");
-            //doesn't exist
-            let newSpot = {
-                "BlockCoordinate": blockItem.coordinates,
-                "spots": [
-                    {
-                        "car": blockItem.car,
-                        "created_time": Date.now(),
-                        "coordinates": blockItem.coordinates,
-                        "email": blockItem.body.email,
-                        "leaveTime": blockItem.leaveTime,
-                        "spotType": blockItem.spotType
-                    }
-                ]
-            }
-            if (!this.validateSpotRequest && !this.supportedCityCheck) {
-                SpotsDB.create({ newSpot }, (findErr: any, findResult: any | null) => {
-                    if (findErr) {
-                        WebUtil.errorResponse(res, null, Constants.CLIENT_ERROR_HB, 404);
+        SpotsDB.findOne({blockCoordinate}, (findErr: Error, blockItem: SpotsByBlock) => {
+            if(findErr) {
+                WebUtil.errorResponse(res, findErr, Constants.SERVER_ERROR, 500);
+                return;
+            } else if(blockItem) {
+                blockItem.spots.push({
+                    email: email,
+                    coordinates: coordinates,
+                    car: req.body.car,
+                    spotType: req.body.spotType,
+                    leaveTime: req.body.leaveTime,
+                    created_time: Date.now()
+                });
+                SpotsDB.updateOne({blockCoordinate}, blockItem, {}, (updateErr: Error, updateRes) => {
+                    if(updateErr) {
+                        WebUtil.errorResponse(res, updateErr, Constants.SERVER_ERROR, 500);
                         return;
                     } else {
+                        this.createSpotPostLimit(email, coordinates);
                         const message = {
                             code: Constants.SUCCESS,
                             message: Constants.SUCCESS
                         }
                         WebUtil.successResponse(res, message, 202);
+                        return;
+                    }
+                })
+            } else {
+                let newBlockItem = {
+                    blockCoordinate,
+                    spots: [
+                        {
+                            car: req.body.car,
+                            created_time: Date.now(),
+                            coordinates: coordinates,
+                            email: email,
+                            leaveTime: req.body.leaveTime,
+                            spotType: req.body.spotType
+                        }
+                    ]
+                }
+                SpotsDB.create(newBlockItem, (createError: any, findResult: any | null) => {
+                    if (createError) {
+                        WebUtil.errorResponse(res, createError, Constants.CLIENT_ERROR_HB, 500);
+                        return;
+                    } else {
+                        this.createSpotPostLimit(email, coordinates);
+                        const message = {
+                            code: Constants.SUCCESS,
+                            message: Constants.SUCCESS
+                        }
+                        WebUtil.successResponse(res, message, 202);
+                        return;
                     }
                 });
             }
-
-            callback(null, newSpot)
-        } else {
-            blockItem = blockItem.Item;
-            console.log("Updating spots: ", blockItem.spots);
-            //already exists
-            let spotAlreadyExists = false;
-            blockItem.spots.forEach(function (element: any) {
-                if (element.coordinates === blockItem.coordinates) {
-                    //spot already exists so just update it
-                    spotAlreadyExists = true;
-                    element.email = blockItem.body.email;
-                    element.status = blockItem.body.status;
-                }
-            });
-
-            if (spotAlreadyExists == false) {
-                //spot doesn't exist so push a new one.
-                blockItem.spots.push({
-                    "email": blockItem.body.email,
-                    "coordinates": blockItem.coordinates,
-                    "car": blockItem.body.car,
-                    "spotType": blockItem.body.spotType,
-                    "leaveTime": blockItem.body.leaveTime,
-                    "postTime": Date.now()
-                });
-            }
-            console.log("Putting item: ", blockItem);
-            callback(null, blockItem);
-        }
-        var result = {
-            statusCode: 200,
-            body: JSON.stringify({
-                code: "",
-                message: "Spot has been posted"
-            }),
-            headers: { 'content-type': 'application/json' }
-        };
-        callback(null, result);
+        });
     };
 
-    public account = (req: Request, res: Response, callback: Function): void => {
-        let body = !req.body ? {} : JSON.parse(req.body);
-        let path = req.path;
+    public spot = (req: Request, res: Response): void => {
         let bearer = req.headers.bearer as string;
         let spotback_correlation_id = req.headers["spotback-correlation-id"];
         try {
-            console.log(`PATH = ${path} BODY = ${body}`);
-            if (req.body.httpMethod !== 'GET' && !body) {
-                throw new Error("INVALID REQUEST");
-            } else if (req.body.httpMethod === 'GET' && !bearer) throw new Error("UNAUTHORIZED");
-        } catch (error) {
-            console.log(`${Constants.CLIENT_ERROR_HB}: ${error.stack}`);
-            res.statusCode = 400;
-            req.body = JSON.stringify({
-                code: Constants.CLIENT_ERROR_HB,
-                message: "Invalid headers or body."
-            });
-            console.log(res);
-            callback(null, res);
+            if (req.method !== 'GET' && !req.body) {
+                WebUtil.errorResponse(res, null, Constants.CLIENT_ERROR_HB, 400);
             return;
-        }
-        let payload = JWT.verify(bearer);
-        if (payload && !this.supportedCityCheck) {
-            this.createSpot(req, res, callback);
-            return;
-        } else {
-            let result = {
-                statusCode: 401,
-                body: JSON.stringify({
-                    code: Constants.CLIENT_ERROR_UA,
-                    message: "FAILED TO CREATE SPOT."
-                })
             }
-            callback(null, result);
+            let payload = JWT.verify(bearer);
+            if (payload) {
+                this.createSpot(req, res, payload.email);
+            } else {
+                WebUtil.errorResponse(res, Constants.CLIENT_ERROR_UA_T, Constants.CLIENT_ERROR_UA, 401);
+                return;
+            }
+        } catch (error) {
+            if (error instanceof JsonWebTokenError) {
+                console.debug(error)
+                WebUtil.errorResponse(res, Constants.CLIENT_ERROR_UA_T, Constants.CLIENT_ERROR_UA, 401);
+                return;
+            } else {
+                WebUtil.errorResponse(res, error, Constants.SERVER_ERROR, 500);
+                return;
+            }
         }
     };
 };

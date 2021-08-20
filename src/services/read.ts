@@ -12,10 +12,12 @@ import WebUtil from '../utils/webUtil'
 import LookUpUtil from '../utils/lookupUtil'
 // import JWT from '../utils/jwtUtil';
 import SpotsDB, { Car, Spot, SpotsByBlock } from '../model/spots-by-block';
+import { createSchema } from 'ts-mongoose';
+import { JsonWebTokenError } from 'jsonwebtoken';
 
 class ReadSpots {
 
-    public readSpots = (req: Request, res: Response, callback: Function): void => {
+    public readSpots = (req: Request, res: Response): void => {
         let reqRang: string = req.query.range as string;
         let range = parseFloat(reqRang || "0");
         //limit range to a max of 2 for now!
@@ -35,41 +37,45 @@ class ReadSpots {
         blocks.push(xSameYSame);
         blocks.push(xUpYSame);
         blocks.push(xlowYSame);
-        for (let i = 0; i < blocks.length; i++) {
-            getPromises.push(blocks[i]);
-            SpotsDB.find(getPromises)
-
-            Promise.all(getPromises).then(function (values) {
+        console.log(blocks);
+        SpotsDB.find({ blockCoordinate: { $in: blocks } }, (err: Error, result) => {
+            if (err) {
+                WebUtil.errorResponse(res, err, Constants.SERVER_ERROR, 500);
+                return;
+            } else {
                 const spots: any = [];
-                values.forEach(function (element: any) {
-                    if (element.blockCoordinate && element.Item.spots) {
-                        spots.push(element.Item.spots);
+                result.forEach((element: SpotsByBlock) => {
+                    console.log(element);
+                    if (element.blockCoordinate && element.spots) {
+                        spots.push(element.spots);
 
                     }
-                })
-                console.log("Results: ", values);
-                const result = {
-                    statusCode: 200,
-                    body: JSON.stringify({ "spots": [].concat.apply([], spots) }),
-                    headers: {
-                        'content-type': 'application/json',
-                        'Access-Control-Allow-Origin': '*'
-
-                    }
-                };
-                callback(null, result);
-            }).catch((err) => {
-                console.log(err);
-            });
-
-
-
-        }
-
+                });
+                console.log(spots);
+                WebUtil.successResponse(res, { spots }, 200, {});
+                return;
+            }
+        });
     };
 
-    public account = (req: Request, res: Response, callback: Function): void => {
-        this.readSpots(req, res, callback)
+    public spots = (req: Request, res: Response): void => {
+        try {
+            const legit = JWT.verify(req.headers.bearer as string);
+            if (legit) {
+                this.readSpots(req, res)
+            } else {
+                WebUtil.errorResponse(res, Constants.CLIENT_ERROR_UA_T, Constants.CLIENT_ERROR_UA, 401);
+            }
+        } catch (error) {
+            if (error instanceof JsonWebTokenError) {
+                console.debug(error)
+                WebUtil.errorResponse(res, Constants.CLIENT_ERROR_UA_T, Constants.CLIENT_ERROR_UA, 401);
+                return;
+            } else {
+                WebUtil.errorResponse(res, error, Constants.SERVER_ERROR, 500);
+                return;
+            }
+        }
     };
 
 }

@@ -44,7 +44,7 @@ class DeleteSpots {
             callback(null, result);
     };
 
-    public account = (req: Request, res:Response, callback: Function): void => {
+    public spot = (req: Request, res:Response, callback: Function): void => {
         let body = null;
         let path = null;
         let bearer = null;

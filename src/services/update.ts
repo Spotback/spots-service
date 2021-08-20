@@ -19,7 +19,7 @@ class UpdateSpots {
 
     };
 
-    public account = (req: Request, res: Response, callback: Function): void => {
+    public spot = (req: Request, res: Response, callback: Function): void => {
 
     };
 

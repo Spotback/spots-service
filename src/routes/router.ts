@@ -11,9 +11,9 @@ export class Routes {
             console.log('HEALTH CHECK SUCCEEDED')
             res.status(200).send();
         })
-        app.post('/createSpot', Create.account);
-        app.post('/updateSpot', Update.account);
-        app.get('/readSpots', Read.account);
-        app.delete('/deleteSpot', Delete.account);
+        app.post('/createSpot', Create.spot);
+        app.post('/updateSpot', Update.spot);
+        app.get('/readSpots', Read.spots);
+        app.delete('/deleteSpot', Delete.spot);
     }
 }
